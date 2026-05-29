@@ -1,20 +1,10 @@
-import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+// App.tsx
+// Ponto de entrada do aplicativo.
+// Apenas renderiza a navegação raiz — toda a lógica vive abaixo dela.
 
-export default function App() {
-  return (
-    <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
-  );
+import React from 'react';
+import { AppNavegacao } from './src/navegacao/AppNavegacao';
+
+export default function App(): React.JSX.Element {
+  return <AppNavegacao />;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
