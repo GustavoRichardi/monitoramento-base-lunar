@@ -1,4 +1,4 @@
-# 🌙 Monitoramento de Recursos da Base Lunar
+#  Monitoramento de Recursos da Base Lunar
 
 Aplicativo mobile para **monitoramento em tempo real dos recursos críticos de uma base lunar** — água, energia e climatização. Desenvolvido em **React Native** com **TypeScript**, consumindo uma **API REST em Spring Boot** para leitura e cadastro dos sensores da base.
 
@@ -8,14 +8,14 @@ O app foi projetado com foco em **resiliência operacional**: a interface nunca 
 
 ---
 
-## 📋 Funcionalidades implementadas
+##  Funcionalidades implementadas
 
-### 🔍 Monitoramento
+###  Monitoramento
 - Tela inicial que carrega o status dos recursos automaticamente ao abrir (via `useEffect`).
 - Cartões visuais individuais para **Água**, **Energia** e **Climatização**, exibindo nível atual, limite crítico, sensor de origem e status operacional.
 - Atualização por *pull-to-refresh*.
 
-### ⚠️ Alertas operacionais
+###  Alertas operacionais
 - Verificação de criticidade **direcional** — água e energia alertam quando ficam *abaixo* do limite; climatização alerta quando fica *acima* dele.
 - Sinalização visual em três camadas: banner global no topo da tela, faixa vermelha com ícone de aviso dentro do card e borda destacada no recurso crítico.
 - Fonte de verdade primária no campo `status` calculado pelo serviço, com reforço por valor bruto.
@@ -26,14 +26,14 @@ O app foi projetado com foco em **resiliência operacional**: a interface nunca 
 - Validação de entrada (campos obrigatórios e conversão numérica segura, com suporte a vírgula decimal pt-BR).
 - Envio via **POST** e retorno automático à tela de monitoramento após sucesso.
 
-### 🛡️ Resiliência e tratamento de erros
+###  Resiliência e tratamento de erros
 - Cliente HTTP centralizado com **timeout obrigatório** (via `AbortController`) e **normalização de erros** em um contrato tipado e único.
 - Padrão `ResultadoApi<T>`: toda falha vira **valor de retorno**, nunca exceção que derruba o app.
 - **Mock de teste opcional** (controlado por flag) que retorna dados fictícios com recursos em estado crítico quando o backend está offline, permitindo testar os alertas visuais sem o Spring Boot rodando.
 
 ---
 
-## 🧱 Arquitetura
+##  Arquitetura
 
 Estrutura organizada em camadas, com separação clara de responsabilidades:
 
@@ -58,7 +58,7 @@ src/
 
 ---
 
-## 🛠️ Tecnologias utilizadas
+##  Tecnologias utilizadas
 
 | Categoria | Tecnologia |
 |-----------|-----------|
@@ -71,7 +71,7 @@ src/
 
 ---
 
-## 🚀 Como rodar o projeto localmente
+##  Como rodar o projeto localmente
 
 ### Pré-requisitos
 - [Node.js](https://nodejs.org/) (versão LTS recomendada)
@@ -98,7 +98,7 @@ npx expo start
 
 Em seguida, escaneie o QR Code com o app **Expo Go** ou pressione `a` (Android) / `i` (iOS) para abrir em um emulador.
 
-### ⚙️ Configuração da API
+###  Configuração da API
 
 A URL base do backend é configurável via variável de ambiente em `src/servicos/api.ts`:
 
@@ -108,7 +108,7 @@ EXPO_PUBLIC_API_URL=http://localhost:8080/api
 
 > **Nota sobre o emulador:** no emulador Android, `localhost` aponta para o próprio dispositivo virtual. Use `http://10.0.2.2:8080/api` para acessar o backend rodando na sua máquina.
 
-### 🧪 Modo de teste sem backend
+###  Modo de teste sem backend
 
 O arquivo `src/servicos/recursoServico.ts` possui a flag `USAR_MOCK_EM_FALHA`:
 - **`true`** (padrão de desenvolvimento): se a API estiver indisponível, o app exibe dados fictícios com recursos em estado crítico, ideal para testar os alertas no emulador.
@@ -116,7 +116,7 @@ O arquivo `src/servicos/recursoServico.ts` possui a flag `USAR_MOCK_EM_FALHA`:
 
 ---
 
-## 👥 Integrantes
+##  Integrantes
 
 | Nome Completo | RM |
 |---------------|-----|
@@ -127,6 +127,6 @@ O arquivo `src/servicos/recursoServico.ts` possui a flag `USAR_MOCK_EM_FALHA`:
 
 ---
 
-## 📄 Licença
+##  Licença
 
 Projeto acadêmico desenvolvido para fins educacionais — FIAP Global Solution.
