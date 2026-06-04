@@ -1,9 +1,7 @@
 // src/telas/TelaCadastro.tsx
-// Tela de cadastro de novos recursos/sensores.
-// Formulário controlado (useState por campo), envio via cadastrarRecurso (POST),
-// feedback com Alert e retorno automático ao Monitoramento em caso de sucesso.
+// Tela de cadastro com estilo sci-fi (Space Vibe).
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -15,6 +13,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Animated,
 } from 'react-native';
 
 import { cadastrarRecurso } from '../servicos/recursoServico';
@@ -27,18 +26,25 @@ import {
 } from '../tipos/recursos';
 import { PropsTelaCadastro } from '../navegacao/AppNavegacao';
 
-// Opções de tipo apresentadas como seletor de botões (evita dependência de
-// biblioteca de Picker — mantém o app enxuto para o escopo da GS).
-const OPCOES_TIPO: { valor: TipoRecurso; rotulo: string; unidade: string }[] = [
-  { valor: TipoRecurso.AGUA, rotulo: 'Água', unidade: '%' },
-  { valor: TipoRecurso.ENERGIA, rotulo: 'Energia', unidade: '%' },
-  { valor: TipoRecurso.CLIMATIZACAO, rotulo: 'Climatização', unidade: '°C' },
+const CORES = {
+  fundoEspaco: '#0B0D17',
+  painelVidro: 'rgba(20, 25, 45, 0.6)',
+  bordaPainel: 'rgba(120, 180, 255, 0.15)',
+  cianoNeon: '#00E5FF',
+  roxoNebulosa: '#9B59FF',
+  laranjaAlerta: '#FF7A33',
+  vermelhoCritico: '#FF2D6A',
+  textoPrincipal: '#E6ECFF',
+  textoSecundario: '#8A92B2',
+  textoTecnico: '#5DD3FF',
+};
+
+const OPCOES_TIPO: { valor: TipoRecurso; rotulo: string; unidade: string; icone: string }[] = [
+  { valor: TipoRecurso.AGUA, rotulo: 'ÁGUA', unidade: '%', icone: '💧' },
+  { valor: TipoRecurso.ENERGIA, rotulo: 'ENERGIA', unidade: '%', icone: '⚡' },
+  { valor: TipoRecurso.CLIMATIZACAO, rotulo: 'CLIMA', unidade: '°C', icone: '🌡' },
 ];
 
-/**
- * Converte string de input em número, retornando null se inválido.
- * Aceita vírgula como separador decimal (padrão pt-BR).
- */
 function paraNumero(texto: string): number | null {
   const normalizado = texto.trim().replace(',', '.');
   if (normalizado === '') return null;
@@ -46,16 +52,6 @@ function paraNumero(texto: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/**
- * Monta um NovoRecurso válido a partir dos campos comuns do formulário.
- *
- * NOTA DE ESCOPO: NovoRecurso é uma união discriminada — cada tipo exige
- * campos específicos (água: percentualPotavel; energia: geracaoSolarKw; etc.).
- * O formulário coleta apenas os campos comuns, então preenchemos os
- * específicos com valores-padrão (zero/false). Para a GS isso é suficiente;
- * se a avaliação exigir os campos completos por tipo, renderizar inputs
- * condicionais por `tipo` é a extensão natural daqui.
- */
 function montarNovoRecurso(
   tipo: TipoRecurso,
   nivelAtual: number,
@@ -63,13 +59,7 @@ function montarNovoRecurso(
   localizacaoSensor: string,
   unidadeMedida: string,
 ): NovoRecurso {
-  const base = {
-    tipo,
-    nivelAtual,
-    nivelCritico,
-    localizacaoSensor,
-    unidadeMedida,
-  };
+  const base = { tipo, nivelAtual, nivelCritico, localizacaoSensor, unidadeMedida };
 
   switch (tipo) {
     case TipoRecurso.AGUA:
@@ -80,7 +70,6 @@ function montarNovoRecurso(
         percentualPotavel: 0,
         taxaReciclagemLitrosHora: 0,
       } as Omit<RecursoAgua, 'id' | 'status' | 'dataLeitura'>;
-
     case TipoRecurso.ENERGIA:
       return {
         ...base,
@@ -90,7 +79,6 @@ function montarNovoRecurso(
         capacidadeBateriaKwh: 0,
         emModoReserva: false,
       } as Omit<RecursoEnergia, 'id' | 'status' | 'dataLeitura'>;
-
     case TipoRecurso.CLIMATIZACAO:
       return {
         ...base,
@@ -103,96 +91,78 @@ function montarNovoRecurso(
   }
 }
 
-export function TelaCadastro({
-  navigation,
-}: PropsTelaCadastro): React.JSX.Element {
-  // Estado controlado: um useState por campo.
+export function TelaCadastro({ navigation }: PropsTelaCadastro): React.JSX.Element {
   const [tipo, setTipo] = useState<TipoRecurso>(TipoRecurso.AGUA);
   const [nivelAtual, setNivelAtual] = useState<string>('');
   const [nivelCritico, setNivelCritico] = useState<string>('');
   const [localizacao, setLocalizacao] = useState<string>('');
   const [enviando, setEnviando] = useState<boolean>(false);
 
-  // Unidade derivada do tipo selecionado (para rótulo do input).
-  const unidadeAtual =
-    OPCOES_TIPO.find((o) => o.valor === tipo)?.unidade ?? '';
+  const escalaEnviar = useRef(new Animated.Value(1)).current;
+
+  const animarPulso = (valor: Animated.Value) => {
+    Animated.sequence([
+      Animated.timing(valor, { toValue: 0.95, duration: 100, useNativeDriver: true }),
+      Animated.timing(valor, { toValue: 1, duration: 150, useNativeDriver: true }),
+    ]).start();
+  };
+
+  const unidadeAtual = OPCOES_TIPO.find((o) => o.valor === tipo)?.unidade ?? '';
 
   const aoEnviar = useCallback(async () => {
-    // 1) Validação de campos.
+    animarPulso(escalaEnviar);
+
     const nivelAtualNum = paraNumero(nivelAtual);
     const nivelCriticoNum = paraNumero(nivelCritico);
 
     if (localizacao.trim() === '') {
-      Alert.alert('Validação', 'Informe a localização do sensor.');
+      Alert.alert('VALIDAÇÃO', 'Informe a localização do sensor.');
       return;
     }
     if (nivelAtualNum === null) {
-      Alert.alert('Validação', 'Nível atual inválido. Use apenas números.');
+      Alert.alert('VALIDAÇÃO', 'Nível atual inválido. Use apenas números.');
       return;
     }
     if (nivelCriticoNum === null) {
-      Alert.alert('Validação', 'Nível crítico inválido. Use apenas números.');
+      Alert.alert('VALIDAÇÃO', 'Nível crítico inválido. Use apenas números.');
       return;
     }
 
-    // 2) Monta o payload tipado e envia (POST).
-    const novoRecurso = montarNovoRecurso(
-      tipo,
-      nivelAtualNum,
-      nivelCriticoNum,
-      localizacao.trim(),
-      unidadeAtual,
-    );
+    const novoRecurso = montarNovoRecurso(tipo, nivelAtualNum, nivelCriticoNum, localizacao.trim(), unidadeAtual);
 
     setEnviando(true);
     const resultado = await cadastrarRecurso(novoRecurso);
     setEnviando(false);
 
-    // 3) Feedback visual + navegação.
     if (resultado.sucesso) {
-      Alert.alert('Sucesso', 'Recurso cadastrado com sucesso!', [
-        {
-          text: 'OK',
-          onPress: () => navigation.navigate('Monitoramento'),
-        },
+      Alert.alert('◉ CADASTRO CONFIRMADO', 'Recurso registrado no sistema central.', [
+        { text: 'OK', onPress: () => navigation.navigate('Monitoramento') },
       ]);
     } else {
-      Alert.alert('Erro no cadastro', resultado.erro.mensagem);
+      Alert.alert('⚠ ERRO NO CADASTRO', resultado.erro.mensagem);
     }
   }, [tipo, nivelAtual, nivelCritico, localizacao, unidadeAtual, navigation]);
 
   return (
-    <KeyboardAvoidingView
-      style={estilos.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView
-        style={estilos.container}
-        contentContainerStyle={estilos.conteudo}
-        keyboardShouldPersistTaps="handled"
-      >
-        <Text style={estilos.titulo}>Novo Recurso / Sensor</Text>
+    <KeyboardAvoidingView style={estilos.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView style={estilos.container} contentContainerStyle={estilos.conteudo} keyboardShouldPersistTaps="handled">
+        <Text style={estilos.tituloPrincipal}>NOVO REGISTRO</Text>
+        <Text style={estilos.subtitulo}>// adicionar sensor à malha de telemetria</Text>
+        <View style={estilos.linhaDivisora} />
 
-        {/* Seletor de tipo */}
-        <Text style={estilos.rotulo}>Tipo do recurso</Text>
+        <Text style={estilos.rotulo}>TIPO DO RECURSO</Text>
         <View style={estilos.grupoTipo}>
           {OPCOES_TIPO.map((opcao) => {
             const selecionado = opcao.valor === tipo;
             return (
               <TouchableOpacity
                 key={opcao.valor}
-                style={[
-                  estilos.botaoTipo,
-                  selecionado && estilos.botaoTipoSelecionado,
-                ]}
+                style={[estilos.botaoTipo, selecionado && estilos.botaoTipoSelecionado]}
                 onPress={() => setTipo(opcao.valor)}
+                activeOpacity={0.7}
               >
-                <Text
-                  style={[
-                    estilos.textoBotaoTipo,
-                    selecionado && estilos.textoBotaoTipoSelecionado,
-                  ]}
-                >
+                <Text style={estilos.iconeTipo}>{opcao.icone}</Text>
+                <Text style={[estilos.textoBotaoTipo, selecionado && estilos.textoBotaoTipoSelecionado]}>
                   {opcao.rotulo}
                 </Text>
               </TouchableOpacity>
@@ -200,58 +170,52 @@ export function TelaCadastro({
           })}
         </View>
 
-        {/* Nível atual */}
-        <Text style={estilos.rotulo}>Nível atual ({unidadeAtual})</Text>
+        <Text style={estilos.rotulo}>NÍVEL ATUAL ({unidadeAtual})</Text>
         <TextInput
           style={estilos.input}
           value={nivelAtual}
           onChangeText={setNivelAtual}
-          placeholder={`Ex: 15`}
-          placeholderTextColor="#9AA5B1"
+          placeholder="0"
+          placeholderTextColor={CORES.textoSecundario}
           keyboardType="numeric"
         />
 
-        {/* Nível crítico */}
-        <Text style={estilos.rotulo}>Nível crítico ({unidadeAtual})</Text>
+        <Text style={estilos.rotulo}>LIMITE CRÍTICO ({unidadeAtual})</Text>
         <TextInput
           style={estilos.input}
           value={nivelCritico}
           onChangeText={setNivelCritico}
-          placeholder={`Ex: 20`}
-          placeholderTextColor="#9AA5B1"
+          placeholder="0"
+          placeholderTextColor={CORES.textoSecundario}
           keyboardType="numeric"
         />
 
-        {/* Localização */}
-        <Text style={estilos.rotulo}>Localização do sensor</Text>
+        <Text style={estilos.rotulo}>LOCALIZAÇÃO DO SENSOR</Text>
         <TextInput
           style={estilos.input}
           value={localizacao}
           onChangeText={setLocalizacao}
-          placeholder="Ex: Reservatório Principal - Módulo A"
-          placeholderTextColor="#9AA5B1"
+          placeholder="Ex: Módulo A · Setor 03"
+          placeholderTextColor={CORES.textoSecundario}
         />
 
-        {/* Botão de envio */}
-        <TouchableOpacity
-          style={[estilos.botaoEnviar, enviando && estilos.botaoDesabilitado]}
-          onPress={aoEnviar}
-          disabled={enviando}
-        >
-          {enviando ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <Text style={estilos.textoBotaoEnviar}>Cadastrar recurso</Text>
-          )}
-        </TouchableOpacity>
+        <Animated.View style={{ transform: [{ scale: escalaEnviar }] }}>
+          <TouchableOpacity
+            style={[estilos.botaoEnviar, enviando && estilos.botaoDesabilitado]}
+            onPress={aoEnviar}
+            disabled={enviando}
+            activeOpacity={0.8}
+          >
+            {enviando ? (
+              <ActivityIndicator color={CORES.fundoEspaco} />
+            ) : (
+              <Text style={estilos.textoBotaoEnviar}>► CONFIRMAR CADASTRO</Text>
+            )}
+          </TouchableOpacity>
+        </Animated.View>
 
-        {/* Cancelar / voltar */}
-        <TouchableOpacity
-          style={estilos.botaoCancelar}
-          onPress={() => navigation.goBack()}
-          disabled={enviando}
-        >
-          <Text style={estilos.textoBotaoCancelar}>Cancelar</Text>
+        <TouchableOpacity style={estilos.botaoCancelar} onPress={() => navigation.goBack()} disabled={enviando}>
+          <Text style={estilos.textoBotaoCancelar}>« CANCELAR E VOLTAR</Text>
         </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -260,88 +224,62 @@ export function TelaCadastro({
 
 const estilos = StyleSheet.create({
   flex: { flex: 1 },
-  container: {
-    flex: 1,
-    backgroundColor: '#F2F4F7',
-  },
-  conteudo: {
-    padding: 16,
-    paddingBottom: 40,
-  },
-  titulo: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#0B1F3A',
-    marginBottom: 20,
-  },
-  rotulo: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#0B1F3A',
-    marginBottom: 6,
-    marginTop: 12,
-  },
-  grupoTipo: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
+  container: { flex: 1, backgroundColor: CORES.fundoEspaco },
+  conteudo: { padding: 20, paddingBottom: 40 },
+  tituloPrincipal: { color: CORES.textoPrincipal, fontSize: 22, fontWeight: '800', letterSpacing: 4 },
+  subtitulo: { color: CORES.textoSecundario, fontSize: 11, fontStyle: 'italic', marginTop: 4, letterSpacing: 1 },
+  linhaDivisora: { height: 1, backgroundColor: CORES.bordaPainel, marginVertical: 20 },
+  rotulo: { color: CORES.cianoNeon, fontSize: 11, fontWeight: '700', letterSpacing: 2, marginTop: 14, marginBottom: 8 },
+  grupoTipo: { flexDirection: 'row', justifyContent: 'space-between' },
   botaoTipo: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 14,
     marginHorizontal: 4,
-    borderRadius: 8,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#CBD2D9',
-    backgroundColor: '#FFFFFF',
+    borderColor: CORES.bordaPainel,
+    backgroundColor: CORES.painelVidro,
     alignItems: 'center',
   },
   botaoTipoSelecionado: {
-    backgroundColor: '#0B1F3A',
-    borderColor: '#0B1F3A',
+    backgroundColor: 'rgba(0, 229, 255, 0.1)',
+    borderColor: CORES.cianoNeon,
+    shadowColor: CORES.cianoNeon,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 6,
   },
-  textoBotaoTipo: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#5D6D7E',
-  },
-  textoBotaoTipoSelecionado: {
-    color: '#FFFFFF',
-  },
+  iconeTipo: { fontSize: 18, marginBottom: 4 },
+  textoBotaoTipo: { fontSize: 11, fontWeight: '700', color: CORES.textoSecundario, letterSpacing: 1 },
+  textoBotaoTipoSelecionado: { color: CORES.cianoNeon },
   input: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: CORES.painelVidro,
     borderWidth: 1,
-    borderColor: '#CBD2D9',
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    borderColor: CORES.bordaPainel,
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     fontSize: 15,
-    color: '#0B1F3A',
+    color: CORES.textoPrincipal,
+    fontFamily: 'monospace',
   },
   botaoEnviar: {
-    backgroundColor: '#0B1F3A',
-    borderRadius: 10,
-    paddingVertical: 15,
+    backgroundColor: CORES.cianoNeon,
+    borderRadius: 12,
+    paddingVertical: 16,
     alignItems: 'center',
-    marginTop: 28,
+    marginTop: 32,
     minHeight: 52,
     justifyContent: 'center',
+    shadowColor: CORES.cianoNeon,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 14,
+    elevation: 8,
   },
-  botaoDesabilitado: {
-    opacity: 0.6,
-  },
-  textoBotaoEnviar: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  botaoCancelar: {
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  textoBotaoCancelar: {
-    color: '#5D6D7E',
-    fontWeight: '600',
-    fontSize: 15,
-  },
+  botaoDesabilitado: { opacity: 0.5 },
+  textoBotaoEnviar: { color: CORES.fundoEspaco, fontWeight: '800', fontSize: 14, letterSpacing: 3 },
+  botaoCancelar: { paddingVertical: 16, alignItems: 'center', marginTop: 12 },
+  textoBotaoCancelar: { color: CORES.textoSecundario, fontWeight: '600', fontSize: 12, letterSpacing: 2 },
 });
