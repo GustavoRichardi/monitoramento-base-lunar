@@ -3,10 +3,7 @@
 
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
-import {
-  createNativeStackNavigator,
-  NativeStackScreenProps,
-} from '@react-navigation/native-stack';
+import { createNativeStackNavigator, NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { TelaMonitoramento } from '../telas/TelaMonitoramento';
 import { TelaCadastro } from '../telas/TelaCadastro';
@@ -27,9 +24,9 @@ export function AppNavegacao(): React.JSX.Element {
       <Pilha.Navigator
         initialRouteName="Monitoramento"
         screenOptions={{
-          headerStyle: { backgroundColor: '#0B1F3A' },
-          headerTintColor: '#FFFFFF',
-          headerTitleStyle: { fontWeight: '700' },
+          headerStyle: { backgroundColor: '#0B0D17' },
+          headerTintColor: '#00E5FF',
+          headerTitleStyle: { fontWeight: '800', letterSpacing: 2 },
         }}
       >
         <Pilha.Screen
