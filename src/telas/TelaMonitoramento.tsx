@@ -1,13 +1,7 @@
 // src/telas/TelaMonitoramento.tsx
-// Tela principal do app: exibe o status operacional de Água, Energia e
-// Climatização em cartões, com destaque visual claro para níveis críticos.
-//
-// Regras atendidas:
-//  - useEffect dispara obterRecursos() ao abrir a tela
-//  - useState armazena dados, carregamento e erro
-//  - Cards por recurso + faixa/banner de alerta crítico
+// Tela principal com estilo sci-fi (Space Vibe).
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -16,51 +10,47 @@ import {
   ActivityIndicator,
   RefreshControl,
   TouchableOpacity,
+  Animated,
+  Easing,
 } from 'react-native';
 
-import { obterRecursos, RecursoComOrigem } from '../servicos/recursoServico';
+import { obterRecursos, simularNovaLeitura, RecursoComOrigem } from '../servicos/recursoServico';
 import { ErroApi } from '../servicos/api';
 import { StatusRecurso, TipoRecurso } from '../tipos/recursos';
 import { PropsTelaMonitoramento } from '../navegacao/AppNavegacao';
 
-// ---------------------------------------------------------------------------
-// LÓGICA DE ALERTA OPERACIONAL (separada da renderização)
-// ---------------------------------------------------------------------------
-//
-// Por que isto não vive dentro do JSX: a criticidade é DIRECIONAL.
-// Água é crítica ABAIXO de um limite; Climatização é crítica ACIMA dele.
-// Uma única comparação não serve aos dois. Centralizar aqui torna a regra
-// testável e mantém os cards "burros" (apenas exibem o que recebem).
-//
-// Fonte de verdade primária: o campo `status` que o serviço/backend já
-// calculou. Os limites por valor abaixo são um reforço de apresentação,
-// usados para montar a mensagem — não para sobrepor o status oficial.
+const CORES = {
+  fundoEspaco: '#0B0D17',
+  painelVidro: 'rgba(20, 25, 45, 0.6)',
+  bordaPainel: 'rgba(120, 180, 255, 0.15)',
+  cianoNeon: '#00E5FF',
+  roxoNebulosa: '#9B59FF',
+  laranjaAlerta: '#FF7A33',
+  vermelhoCritico: '#FF2D6A',
+  verdeNormal: '#27FFB2',
+  textoPrincipal: '#E6ECFF',
+  textoSecundario: '#8A92B2',
+  textoTecnico: '#5DD3FF',
+};
 
-interface AvaliacaoCriticidade {
-  emAlerta: boolean;
-  mensagem: string | null;
-}
-
-function avaliarCriticidade(recurso: RecursoComOrigem): AvaliacaoCriticidade {
-  // 1) O status calculado pelo serviço manda. Se já veio CRITICO, é alerta.
+function avaliarCriticidade(recurso: RecursoComOrigem): { emAlerta: boolean; mensagem: string | null } {
   const criticoPorStatus = recurso.status === StatusRecurso.CRITICO;
 
-  // 2) Reforço por valor bruto, respeitando a direção de cada recurso.
   let criticoPorValor = false;
   let mensagem: string | null = null;
 
   switch (recurso.tipo) {
     case TipoRecurso.AGUA:
       criticoPorValor = recurso.nivelAtual < recurso.nivelCritico;
-      mensagem = `Nível de água crítico: ${recurso.nivelAtual}% (mínimo seguro ${recurso.nivelCritico}%)`;
+      mensagem = `H2O crítico: ${recurso.nivelAtual}% — mínimo seguro ${recurso.nivelCritico}%`;
       break;
     case TipoRecurso.CLIMATIZACAO:
       criticoPorValor = recurso.nivelAtual > recurso.nivelCritico;
-      mensagem = `Temperatura crítica: ${recurso.nivelAtual}°C (máximo seguro ${recurso.nivelCritico}°C)`;
+      mensagem = `Temp. crítica: ${recurso.nivelAtual}°C — máximo seguro ${recurso.nivelCritico}°C`;
       break;
     case TipoRecurso.ENERGIA:
       criticoPorValor = recurso.nivelAtual < recurso.nivelCritico;
-      mensagem = `Carga de energia crítica: ${recurso.nivelAtual}% (mínimo seguro ${recurso.nivelCritico}%)`;
+      mensagem = `Energia crítica: ${recurso.nivelAtual}% — mínimo seguro ${recurso.nivelCritico}%`;
       break;
   }
 
@@ -68,141 +58,166 @@ function avaliarCriticidade(recurso: RecursoComOrigem): AvaliacaoCriticidade {
   return { emAlerta, mensagem: emAlerta ? mensagem : null };
 }
 
-// Rótulo amigável por tipo de recurso.
 const ROTULO_RECURSO: Record<TipoRecurso, string> = {
-  [TipoRecurso.AGUA]: 'Água',
-  [TipoRecurso.ENERGIA]: 'Energia',
-  [TipoRecurso.CLIMATIZACAO]: 'Climatização',
+  [TipoRecurso.AGUA]: 'H2O · ÁGUA',
+  [TipoRecurso.ENERGIA]: 'PWR · ENERGIA',
+  [TipoRecurso.CLIMATIZACAO]: 'THM · CLIMA',
 };
 
-// ---------------------------------------------------------------------------
-// SUBCOMPONENTE: Cartão de recurso
-// ---------------------------------------------------------------------------
+const ICONE_RECURSO: Record<TipoRecurso, string> = {
+  [TipoRecurso.AGUA]: '💧',
+  [TipoRecurso.ENERGIA]: '⚡',
+  [TipoRecurso.CLIMATIZACAO]: '🌡',
+};
 
-interface PropsCartaoRecurso {
-  recurso: RecursoComOrigem;
-}
+function AnelProgresso({ valor, cor }: { valor: number; cor: string }): React.JSX.Element {
+  const animacao = useRef(new Animated.Value(0)).current;
 
-function CartaoRecurso({ recurso }: PropsCartaoRecurso): React.JSX.Element {
-  const { emAlerta, mensagem } = avaliarCriticidade(recurso);
+  useEffect(() => {
+    Animated.timing(animacao, {
+      toValue: Math.min(valor, 100),
+      duration: 900,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [valor]);
+
+  const largura = animacao.interpolate({
+    inputRange: [0, 100],
+    outputRange: ['0%', '100%'],
+  });
 
   return (
-    <View
-      style={[estilos.cartao, emAlerta && estilos.cartaoCritico]}
-      accessibilityRole="summary"
-    >
-      {/* Faixa vermelha de alerta — só aparece em estado crítico */}
+    <View style={estilos.anelContainer}>
+      <View style={estilos.anelTrilha}>
+        <Animated.View style={[estilos.anelPreenchido, { width: largura, backgroundColor: cor }]} />
+      </View>
+    </View>
+  );
+}
+
+function CartaoRecurso({ recurso }: { recurso: RecursoComOrigem }): React.JSX.Element {
+  const { emAlerta, mensagem } = avaliarCriticidade(recurso);
+  const corStatus = corPorStatus(recurso.status);
+
+  const valorBarra =
+    recurso.tipo === TipoRecurso.CLIMATIZACAO
+      ? Math.min((recurso.nivelAtual / 50) * 100, 100)
+      : recurso.nivelAtual;
+
+  return (
+    <View style={[estilos.cartao, emAlerta && estilos.cartaoCritico]}>
+      <View style={estilos.linhaCabecalho}>
+        <Text style={estilos.iconeRecurso}>{ICONE_RECURSO[recurso.tipo]}</Text>
+        <Text style={estilos.tituloCartao}>{ROTULO_RECURSO[recurso.tipo]}</Text>
+        <View style={[estilos.selo, { backgroundColor: corStatus + '22', borderColor: corStatus }]}>
+          <Text style={[estilos.textoSelo, { color: corStatus }]}>● {recurso.status}</Text>
+        </View>
+      </View>
+
+      <View style={estilos.linhaValor}>
+        <Text style={[estilos.valorPrincipal, { color: corStatus }]}>
+          {recurso.nivelAtual}
+          <Text style={estilos.unidade}>{recurso.unidadeMedida}</Text>
+        </Text>
+        <View style={estilos.detalhesDireita}>
+          <Text style={estilos.detalheLabel}>LIMITE</Text>
+          <Text style={estilos.detalheValor}>
+            {recurso.nivelCritico}{recurso.unidadeMedida}
+          </Text>
+        </View>
+      </View>
+
+      <AnelProgresso valor={valorBarra} cor={corStatus} />
+
+      <Text style={estilos.sensorLabel}>
+        <Text style={estilos.sensorPrefix}>SENSOR » </Text>
+        {recurso.localizacaoSensor}
+      </Text>
+
       {emAlerta && (
         <View style={estilos.faixaAlerta}>
-          <Text style={estilos.iconeAlerta}>⚠️</Text>
+          <Text style={estilos.iconeAlerta}>⚠</Text>
           <Text style={estilos.textoAlerta}>{mensagem}</Text>
         </View>
       )}
 
-      <View style={estilos.cabecalhoCartao}>
-        <Text style={estilos.tituloCartao}>{ROTULO_RECURSO[recurso.tipo]}</Text>
-        <Text style={[estilos.selo, corDoStatus(recurso.status)]}>
-          {recurso.status}
-        </Text>
-      </View>
-
-      <Text style={estilos.valorPrincipal}>
-        {recurso.nivelAtual}
-        <Text style={estilos.unidade}> {recurso.unidadeMedida}</Text>
-      </Text>
-
-      <Text style={estilos.detalhe}>Sensor: {recurso.localizacaoSensor}</Text>
-      <Text style={estilos.detalhe}>
-        Limite crítico: {recurso.nivelCritico} {recurso.unidadeMedida}
-      </Text>
-
-      {/* Selo discreto indicando dado simulado (mock), quando aplicável */}
       {recurso.origemSimulada && (
-        <Text style={estilos.seloSimulado}>● dados de teste (simulados)</Text>
+        <Text style={estilos.seloSimulado}>◉ leitura simulada</Text>
       )}
     </View>
   );
 }
 
-// Mapeia status -> cor do selo.
-function corDoStatus(status: StatusRecurso) {
+function corPorStatus(status: StatusRecurso): string {
   switch (status) {
-    case StatusRecurso.CRITICO:
-      return { backgroundColor: '#C0392B', color: '#FFFFFF' };
-    case StatusRecurso.ATENCAO:
-      return { backgroundColor: '#E67E22', color: '#FFFFFF' };
-    case StatusRecurso.OFFLINE:
-      return { backgroundColor: '#7F8C8D', color: '#FFFFFF' };
+    case StatusRecurso.CRITICO: return CORES.vermelhoCritico;
+    case StatusRecurso.ATENCAO: return CORES.laranjaAlerta;
+    case StatusRecurso.OFFLINE: return CORES.textoSecundario;
     case StatusRecurso.NORMAL:
-    default:
-      return { backgroundColor: '#27AE60', color: '#FFFFFF' };
+    default: return CORES.cianoNeon;
   }
 }
 
-// ---------------------------------------------------------------------------
-// TELA PRINCIPAL
-// ---------------------------------------------------------------------------
-
-export function TelaMonitoramento({
-  navigation,
-}: PropsTelaMonitoramento): React.JSX.Element {
-  // Estado tipado: o tripé dados / carregando / erro.
+export function TelaMonitoramento({ navigation }: PropsTelaMonitoramento): React.JSX.Element {
   const [recursos, setRecursos] = useState<RecursoComOrigem[]>([]);
   const [carregando, setCarregando] = useState<boolean>(true);
   const [erro, setErro] = useState<ErroApi | null>(null);
   const [atualizando, setAtualizando] = useState<boolean>(false);
 
-  // Função de carga reutilizável (montagem inicial + pull-to-refresh).
+  const escalaSimular = useRef(new Animated.Value(1)).current;
+  const escalaCadastro = useRef(new Animated.Value(1)).current;
+
+  const animarPulso = (valor: Animated.Value) => {
+    Animated.sequence([
+      Animated.timing(valor, { toValue: 0.95, duration: 100, useNativeDriver: true }),
+      Animated.timing(valor, { toValue: 1, duration: 150, useNativeDriver: true }),
+    ]).start();
+  };
+
   const carregarRecursos = useCallback(async () => {
     setErro(null);
     const resultado = await obterRecursos();
-    if (resultado.sucesso) {
-      setRecursos(resultado.dados);
-    } else {
-      setErro(resultado.erro);
-    }
+    if (resultado.sucesso) setRecursos(resultado.dados);
+    else setErro(resultado.erro);
   }, []);
 
-  // useEffect: dispara a busca assim que a tela abre.
-  // O flag `ativo` evita atualizar estado se a tela desmontar antes da resposta.
   useEffect(() => {
     let ativo = true;
-
     (async () => {
       setCarregando(true);
       const resultado = await obterRecursos();
       if (!ativo) return;
-      if (resultado.sucesso) {
-        setRecursos(resultado.dados);
-      } else {
-        setErro(resultado.erro);
-      }
+      if (resultado.sucesso) setRecursos(resultado.dados);
+      else setErro(resultado.erro);
       setCarregando(false);
     })();
-
-    return () => {
-      ativo = false;
-    };
+    return () => { ativo = false; };
   }, []);
 
-  // Pull-to-refresh.
   const aoAtualizar = useCallback(async () => {
     setAtualizando(true);
     await carregarRecursos();
     setAtualizando(false);
   }, [carregarRecursos]);
 
-  // Quantidade de recursos em alerta — alimenta o banner global do topo.
-  const recursosEmAlerta = recursos.filter(
-    (r) => avaliarCriticidade(r).emAlerta,
-  );
+  const aoSimularLeitura = useCallback(async () => {
+    animarPulso(escalaSimular);
+    setAtualizando(true);
+    simularNovaLeitura();
+    await carregarRecursos();
+    setAtualizando(false);
+  }, [carregarRecursos]);
 
-  // Estado de carregamento inicial.
+  const recursosEmAlerta = recursos.filter((r) => avaliarCriticidade(r).emAlerta);
+  const cicloLunar = Math.floor((Date.now() / (1000 * 60 * 60 * 24)) % 100);
+
   if (carregando) {
     return (
       <View style={estilos.centralizado}>
-        <ActivityIndicator size="large" color="#0B1F3A" />
-        <Text style={estilos.textoCarregando}>Lendo sensores da base...</Text>
+        <ActivityIndicator size="large" color={CORES.cianoNeon} />
+        <Text style={estilos.textoCarregando}>INICIALIZANDO SENSORES...</Text>
+        <Text style={estilos.textoCarregandoSub}>// estabelecendo telemetria</Text>
       </View>
     );
   }
@@ -212,196 +227,188 @@ export function TelaMonitoramento({
       style={estilos.container}
       contentContainerStyle={estilos.conteudo}
       refreshControl={
-        <RefreshControl refreshing={atualizando} onRefresh={aoAtualizar} />
+        <RefreshControl
+          refreshing={atualizando}
+          onRefresh={aoAtualizar}
+          tintColor={CORES.cianoNeon}
+          colors={[CORES.cianoNeon]}
+        />
       }
     >
-      {/* Banner global de erro real (só aparece com mock desligado) */}
+      <View style={estilos.cabecalho}>
+        <Text style={estilos.saudacao}>BEM-VINDO, COMANDANTE</Text>
+        <Text style={estilos.cicloLunar}>● CICLO LUNAR : {cicloLunar.toString().padStart(3, '0')}</Text>
+        <View style={estilos.linhaDivisora} />
+      </View>
+
       {erro && (
         <View style={estilos.bannerErro}>
           <Text style={estilos.textoBannerErro}>{erro.mensagem}</Text>
           <TouchableOpacity onPress={carregarRecursos} style={estilos.botaoRetry}>
-            <Text style={estilos.textoBotaoRetry}>Tentar novamente</Text>
+            <Text style={estilos.textoBotaoRetry}>↻ TENTAR NOVAMENTE</Text>
           </TouchableOpacity>
         </View>
       )}
 
-      {/* Banner global de alerta operacional, no topo da tela */}
       {recursosEmAlerta.length > 0 && (
         <View style={estilos.bannerCriticoGlobal}>
           <Text style={estilos.textoBannerCritico}>
-            ⚠️ {recursosEmAlerta.length} recurso(s) em estado crítico — ação
-            imediata necessária
+            ⚠ {recursosEmAlerta.length} SISTEMA(S) EM ESTADO CRÍTICO
+          </Text>
+          <Text style={estilos.textoBannerCriticoSub}>
+            // ação imediata necessária
           </Text>
         </View>
       )}
 
-      {/* Cartões dos recursos */}
+      <Animated.View style={{ transform: [{ scale: escalaSimular }] }}>
+        <TouchableOpacity style={estilos.botaoSimular} onPress={aoSimularLeitura} activeOpacity={0.8}>
+          <Text style={estilos.textoBotaoSimular}>⟳  SIMULAR NOVA LEITURA</Text>
+        </TouchableOpacity>
+      </Animated.View>
+
       {recursos.map((recurso) => (
         <CartaoRecurso key={recurso.id} recurso={recurso} />
       ))}
 
-      {/* Atalho para a tela de cadastro */}
-      <TouchableOpacity
-        style={estilos.botaoCadastro}
-        onPress={() => navigation.navigate('Cadastro')}
-      >
-        <Text style={estilos.textoBotaoCadastro}>+ Cadastrar novo recurso</Text>
-      </TouchableOpacity>
+      <Animated.View style={{ transform: [{ scale: escalaCadastro }] }}>
+        <TouchableOpacity
+          style={estilos.botaoCadastro}
+          onPress={() => { animarPulso(escalaCadastro); navigation.navigate('Cadastro'); }}
+          activeOpacity={0.8}
+        >
+          <Text style={estilos.textoBotaoCadastro}>+ CADASTRAR NOVO RECURSO</Text>
+        </TouchableOpacity>
+      </Animated.View>
+
+      <Text style={estilos.rodape}>// MOON BASE TELEMETRY v1.0</Text>
     </ScrollView>
   );
 }
 
-// ---------------------------------------------------------------------------
-// ESTILOS
-// ---------------------------------------------------------------------------
-
 const estilos = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F2F4F7',
+  container: { flex: 1, backgroundColor: CORES.fundoEspaco },
+  conteudo: { padding: 20, paddingBottom: 40 },
+  centralizado: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: CORES.fundoEspaco },
+  textoCarregando: { marginTop: 16, color: CORES.cianoNeon, fontSize: 13, letterSpacing: 2, fontWeight: '700' },
+  textoCarregandoSub: { marginTop: 4, color: CORES.textoSecundario, fontSize: 11, fontStyle: 'italic' },
+  cabecalho: { marginBottom: 24 },
+  saudacao: { color: CORES.textoPrincipal, fontSize: 18, fontWeight: '800', letterSpacing: 3 },
+  cicloLunar: { color: CORES.cianoNeon, fontSize: 11, marginTop: 6, letterSpacing: 2, fontFamily: 'monospace' },
+  linhaDivisora: {
+    height: 1,
+    backgroundColor: CORES.bordaPainel,
+    marginTop: 16,
+    shadowColor: CORES.cianoNeon,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
   },
-  conteudo: {
-    padding: 16,
-    paddingBottom: 40,
-  },
-  centralizado: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F2F4F7',
-  },
-  textoCarregando: {
-    marginTop: 12,
-    color: '#0B1F3A',
-    fontSize: 15,
-  },
-  // Banner global crítico
   bannerCriticoGlobal: {
-    backgroundColor: '#C0392B',
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 16,
-  },
-  textoBannerCritico: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  // Banner de erro real
-  bannerErro: {
-    backgroundColor: '#FDECEA',
-    borderColor: '#C0392B',
+    backgroundColor: 'rgba(255, 45, 106, 0.12)',
+    borderColor: CORES.vermelhoCritico,
     borderWidth: 1,
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 16,
-  },
-  textoBannerErro: {
-    color: '#922B21',
-    fontSize: 14,
-    marginBottom: 8,
-  },
-  botaoRetry: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#C0392B',
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-    borderRadius: 6,
-  },
-  textoBotaoRetry: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
-  // Cartões
-  cartao: {
-    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 16,
+    marginBottom: 16,
+    shadowColor: CORES.vermelhoCritico,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  textoBannerCritico: { color: CORES.vermelhoCritico, fontWeight: '800', fontSize: 13, letterSpacing: 2, textAlign: 'center' },
+  textoBannerCriticoSub: { color: CORES.vermelhoCritico, fontSize: 11, fontStyle: 'italic', textAlign: 'center', marginTop: 4, opacity: 0.7 },
+  bannerErro: {
+    backgroundColor: 'rgba(255, 122, 51, 0.12)',
+    borderColor: CORES.laranjaAlerta,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+  },
+  textoBannerErro: { color: CORES.laranjaAlerta, fontSize: 13, marginBottom: 10 },
+  botaoRetry: { alignSelf: 'flex-start', backgroundColor: CORES.laranjaAlerta, paddingVertical: 6, paddingHorizontal: 14, borderRadius: 6 },
+  textoBotaoRetry: { color: CORES.fundoEspaco, fontWeight: '700', fontSize: 11, letterSpacing: 1 },
+  botaoSimular: {
+    backgroundColor: 'rgba(0, 229, 255, 0.1)',
+    borderColor: CORES.cianoNeon,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginBottom: 20,
+    shadowColor: CORES.cianoNeon,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  textoBotaoSimular: { color: CORES.cianoNeon, fontWeight: '700', fontSize: 13, letterSpacing: 3 },
+  cartao: {
+    backgroundColor: CORES.painelVidro,
+    borderRadius: 14,
+    padding: 18,
     marginBottom: 14,
+    borderWidth: 1,
+    borderColor: CORES.bordaPainel,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 3,
-    overflow: 'hidden',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 5,
   },
   cartaoCritico: {
-    borderColor: '#C0392B',
-    borderWidth: 2,
+    borderColor: CORES.vermelhoCritico,
+    borderWidth: 1.5,
+    shadowColor: CORES.vermelhoCritico,
+    shadowOpacity: 0.4,
+    shadowRadius: 14,
   },
+  linhaCabecalho: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  iconeRecurso: { fontSize: 18, marginRight: 8 },
+  tituloCartao: { color: CORES.textoPrincipal, fontSize: 12, fontWeight: '800', letterSpacing: 2, flex: 1 },
+  selo: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1 },
+  textoSelo: { fontSize: 9, fontWeight: '700', letterSpacing: 1 },
+  linhaValor: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 12 },
+  valorPrincipal: { fontSize: 42, fontWeight: '300', fontFamily: 'monospace' },
+  unidade: { fontSize: 18, fontWeight: '400' },
+  detalhesDireita: { alignItems: 'flex-end' },
+  detalheLabel: { color: CORES.textoSecundario, fontSize: 9, letterSpacing: 2, fontWeight: '700' },
+  detalheValor: { color: CORES.textoTecnico, fontSize: 14, fontFamily: 'monospace', marginTop: 2 },
+  anelContainer: { marginVertical: 8 },
+  anelTrilha: { height: 6, backgroundColor: 'rgba(120, 180, 255, 0.08)', borderRadius: 3, overflow: 'hidden' },
+  anelPreenchido: { height: '100%', borderRadius: 3 },
+  sensorLabel: { color: CORES.textoSecundario, fontSize: 11, marginTop: 8, fontFamily: 'monospace' },
+  sensorPrefix: { color: CORES.cianoNeon, fontWeight: '700' },
   faixaAlerta: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#C0392B',
-    marginHorizontal: -16,
-    marginTop: -16,
-    marginBottom: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    backgroundColor: 'rgba(255, 45, 106, 0.15)',
+    borderTopWidth: 1,
+    borderTopColor: CORES.vermelhoCritico,
+    marginHorizontal: -18,
+    marginTop: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
   },
-  iconeAlerta: {
-    fontSize: 16,
-    marginRight: 8,
-  },
-  textoAlerta: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-    fontSize: 13,
-    flexShrink: 1,
-  },
-  cabecalhoCartao: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  tituloCartao: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#0B1F3A',
-  },
-  selo: {
-    fontSize: 11,
-    fontWeight: '700',
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  valorPrincipal: {
-    fontSize: 36,
-    fontWeight: '800',
-    color: '#0B1F3A',
-    marginBottom: 8,
-  },
-  unidade: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#5D6D7E',
-  },
-  detalhe: {
-    fontSize: 13,
-    color: '#5D6D7E',
-    marginBottom: 2,
-  },
-  seloSimulado: {
-    marginTop: 8,
-    fontSize: 11,
-    color: '#B7950B',
-    fontStyle: 'italic',
-  },
-  // Botão de cadastro
+  iconeAlerta: { fontSize: 14, marginRight: 8, color: CORES.vermelhoCritico },
+  textoAlerta: { color: CORES.vermelhoCritico, fontWeight: '600', fontSize: 12, flexShrink: 1, letterSpacing: 0.5 },
+  seloSimulado: { marginTop: 10, fontSize: 10, color: CORES.roxoNebulosa, fontStyle: 'italic', letterSpacing: 1 },
   botaoCadastro: {
-    backgroundColor: '#0B1F3A',
-    borderRadius: 10,
-    paddingVertical: 14,
+    backgroundColor: 'rgba(155, 89, 255, 0.15)',
+    borderColor: CORES.roxoNebulosa,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 16,
     alignItems: 'center',
     marginTop: 8,
+    shadowColor: CORES.roxoNebulosa,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 6,
   },
-  textoBotaoCadastro: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 15,
-  },
+  textoBotaoCadastro: { color: CORES.roxoNebulosa, fontWeight: '700', fontSize: 13, letterSpacing: 3 },
+  rodape: { color: CORES.textoSecundario, fontSize: 10, textAlign: 'center', marginTop: 30, letterSpacing: 2, fontFamily: 'monospace', opacity: 0.5 },
 });
